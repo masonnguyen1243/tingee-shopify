@@ -79,9 +79,9 @@ Goal: Tất cả logic nghiệp vụ và tương tác DB hoàn chỉnh — chưa
 Goal: Mỗi màn hình dùng dữ liệu thật từ DB và API — xóa hết hardcoded.
 
 **Màn cấu hình** (`app/routes/app.settings.tsx`)
-- [ ] `loader`: đọc cấu hình hiện tại từ DB (nếu có) — hiện lại VA đã chọn
-- [ ] `action` bước 1 (kết nối): nhận `clientId` + `secretToken` → gọi `TingeeService.listVirtualAccounts` → trả danh sách VA về UI
-- [ ] `action` bước 2 (lưu): nhận VA đã chọn → gọi `registerNotify` nếu cần → mã hóa `secretToken` → lưu `tingee_configs` + `tingee_accounts`
+- [x] `loader`: đọc cấu hình hiện tại từ DB (nếu có) — hiện lại VA đã chọn
+- [x] `action` bước 1 (kết nối): nhận `clientId` + `secretToken` → gọi `TingeeService.listVirtualAccounts` → trả danh sách VA về UI
+- [x] `action` bước 2 (lưu): nhận VA đã chọn → gọi `registerNotify` nếu cần → mã hóa `secretToken` → lưu `tingee_configs` + `tingee_accounts`
 
 **Trang QR** (`app/routes/payment.qr.$orderId.tsx`)
 - [ ] `loader`: đọc `shopify_order_id` từ params → kiểm tra đơn trong DB (nếu đã có `payments` thì dùng lại) → gọi `generateVietQR` với `reconcile_code` mới → lưu bản ghi `payments`

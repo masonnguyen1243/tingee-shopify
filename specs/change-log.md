@@ -27,6 +27,40 @@
 
 ---
 
+## [2.0.0] 2026-06-13 — Phase 4a: Màn cấu hình nối với DB và Tingee API
+
+### Changed
+- `app/routes/app.settings.tsx` — xóa toàn bộ mock data, nối với dữ liệu thật:
+
+**Loader:**
+- Authenticate admin → tìm `Merchant` theo `shopDomain`
+- Nếu merchant có `TingeeConfig` active, trả về `savedConfig` (clientId, VA mặc định, danh sách accounts)
+- Dùng `getBankShortName(bankBin)` để hiển thị tên ngân hàng từ DB
+
+**Action `_action=connect`:**
+- Nhận `clientId` + `secretToken` từ form
+- Gọi `TingeeService.listVirtualAccounts` với credentials thật
+- Trả danh sách VA về UI; lỗi Tingee hiển thị inline banner
+
+**Action `_action=save`:**
+- Upsert `Merchant` (tạo hoặc update accessToken)
+- Deactivate TingeeConfig cũ → tạo TingeeConfig mới (secretToken đã encrypt bằng AES-256-GCM)
+- Gọi `registerNotify(vaAccountNumber, bankBin, ...)` — nếu lỗi thì vẫn lưu account với `notifyRegistered=false`
+- Tạo `TingeeAccount` với `isDefault=true`
+
+**UI:**
+- Trang load có savedConfig → tự chuyển step="va-list", pre-fill clientId, hiển thị VA đã lưu
+- Nút "Kết nối / Kết nối lại" → gửi submit `_action=connect`
+- Nút "Lưu cấu hình" → gửi submit `_action=save` kèm VA được chọn
+- Loading state dựa trên `useNavigation` (không dùng mock setTimeout)
+- Lỗi connect/save hiển thị inline banner (không crash app)
+
+### Design decisions
+- `secretToken` không được pre-fill (encrypted ở DB, không decrypt để hiển thị) — user phải nhập lại khi muốn reconnect hoặc đổi VA
+- `registerNotify` có thể fail nếu VA đã đăng ký trước → catch silently, lưu `notifyRegistered=false`
+
+---
+
 ## [1.7.0] 2026-06-13 — Phase 3e: Reconcile code generator
 
 ### Added
