@@ -48,29 +48,29 @@ Goal: Tất cả màn hình render được với dữ liệu tĩnh (hardcoded).
 Goal: Tất cả logic nghiệp vụ và tương tác DB hoàn chỉnh — chưa nối với UI.
 
 **Encryption helper** (`app/utils/crypto.server.ts`)
-- [ ] `encrypt(plaintext: string, key: string): string` — trả ciphertext base64
-- [ ] `decrypt(ciphertext: string, key: string): string` — trả plaintext
-- [ ] Key đọc từ env `ENCRYPTION_KEY`; throw nếu thiếu key
+- [x] `encrypt(plaintext: string, key: string): string` — trả ciphertext base64
+- [x] `decrypt(ciphertext: string, key: string): string` — trả plaintext
+- [x] Key đọc từ env `ENCRYPTION_KEY`; throw nếu thiếu key
 
 **TingeeService** (`app/services/tingee.server.ts`)
-- [ ] `listVirtualAccounts(clientId, secretToken)` — gọi `POST /v1/get-va-paging`, trả mảng VA
-- [ ] `registerNotify(vaAccountNumber, bankBin, clientId, secretToken)` — gọi `register-notify` rồi `confirm-register-notify`
-- [ ] `generateVietQR(bankBin, accountNumber, amount, content, clientId, secretToken)` — gọi `POST /v1/generate-viet-qr`, trả `{ qrCode, qrCodeImage }`
-- [ ] `getTransactions(clientId, secretToken, ...)` — gọi `POST /v1/transaction/get-paging`
-- [ ] Mọi lỗi từ Tingee (code != "00") đều throw với message rõ ràng
+- [x] `listVirtualAccounts(clientId, secretToken)` — gọi `POST /v1/get-va-paging`, trả mảng VA
+- [x] `registerNotify(vaAccountNumber, bankBin, clientId, secretToken)` — gọi `register-notify` rồi `confirm-register-notify`
+- [x] `generateVietQR(bankBin, accountNumber, amount, content, clientId, secretToken)` — gọi `POST /v1/generate-viet-qr`, trả `{ qrCode, qrCodeImage }`
+- [x] `getTransactions(clientId, secretToken, ...)` — gọi `POST /v1/transaction/get-paging`
+- [x] Mọi lỗi từ Tingee (code != "00") đều throw với message rõ ràng
 
 **OrderReconcile service** (`app/services/order-reconcile.server.ts`)
-- [ ] `markPaid(shopDomain, orderId, amount, accessToken)` — gọi Shopify Admin API `POST /admin/api/2024-10/orders/{orderId}/transactions.json` với `kind=capture, status=success`
-- [ ] Cập nhật `payments.status = paid` và `payments.paid_at` trong DB
+- [x] `markPaid(shopDomain, orderId, amount, accessToken)` — gọi Shopify Admin API `POST /admin/api/2024-10/orders/{orderId}/transactions.json` với `kind=capture, status=success`
+- [x] Cập nhật `payments.status = paid` và `payments.paid_at` trong DB
 
 **IPN handler logic** (`app/services/ipn.server.ts`)
-- [ ] `verifySignature(timestamp, rawBody, secretToken): boolean`
-- [ ] `extractReconcileCode(content: string): string | null` — regex `TG[A-Z0-9]{5,10}`
-- [ ] `processIPN(payload, headers)` — full flow: verify → idempotency check → extract code → match payment → compare amount → markPaid hoặc set mismatch → lưu webhook_event
+- [x] `verifySignature(timestamp, rawBody, secretToken): boolean`
+- [x] `extractReconcileCode(content: string): string | null` — regex `TG[A-Z0-9]{5,10}`
+- [x] `processIPN(payload, headers)` — full flow: verify → idempotency check → extract code → match payment → compare amount → markPaid hoặc set mismatch → lưu webhook_event
 
 **Reconcile code generator** (`app/utils/reconcile.server.ts`)
-- [ ] `generateReconcileCode(): string` — `TG` + 7 ký tự random uppercase alphanumeric
-- [ ] `ensureUnique(code, db): Promise<string>` — check DB, retry nếu trùng (tối đa 5 lần)
+- [x] `generateReconcileCode(): string` — `TG` + 7 ký tự random uppercase alphanumeric
+- [x] `ensureUnique(code, db): Promise<string>` — check DB, retry nếu trùng (tối đa 5 lần)
 
 ---
 

@@ -27,6 +27,143 @@
 
 ---
 
+## [1.7.0] 2026-06-13 — Phase 3e: Reconcile code generator
+
+### Added
+- `app/utils/reconcile.server.ts`:
+  - `generateReconcileCode(): string` — sinh `TG` + 7 ký tự random từ charset `A-Z0-9` dùng `crypto.randomBytes` (CSPRNG, không dùng `Math.random`)
+  - `ensureUnique(): Promise<string>` — gọi `generateReconcileCode()`, kiểm tra DB xem code đã tồn tại chưa, retry tối đa 5 lần; throw nếu vẫn trùng sau 5 lần (xác suất xảy ra cực thấp)
+
+### Design decisions
+- Dùng `randomBytes` thay `Math.random` để đảm bảo entropy đủ mạnh (không đoán được)
+- `b % CHARSET.length` (36 chars): modulo bias không đáng kể ở đây vì 256/36 ≈ 7.1 — entropy vẫn đủ cho 7 ký tự
+- `ensureUnique` tự gọi `generateReconcileCode` bên trong (không nhận code từ ngoài vào) — đơn giản hơn spec gốc, không thay đổi behavior
+- Xác suất trùng: charset 36^7 ≈ 78 tỷ tổ hợp → cực thấp kể cả khi có hàng triệu đơn
+
+### Manual test
+```
+node -e "
+import('./app/utils/reconcile.server.js').then(m => {
+  // test generateReconcileCode
+  for (let i = 0; i < 5; i++) console.log(m.generateReconcileCode());
+});
+" --input-type=module
+# Kỳ vọng: 5 mã dạng 'TG' + 7 ký tự A-Z0-9, mỗi lần khác nhau
+```
+
+Compile check: `npm run typecheck` → pass.
+
+---
+
+## [1.6.0] 2026-06-13 — Phase 3d: IPN handler logic
+
+### Added
+- `app/services/ipn.server.ts`:
+  - `verifySignature(timestamp, rawBody, secretToken, incomingSignature)`: tính `HMAC_SHA512(timestamp + ":" + rawBody, secretToken)` và so sánh timing-safe với `x-signature` header; trả `false` nếu độ dài buffer khác nhau (chữ ký không hợp lệ)
+  - `extractReconcileCode(content)`: regex `TG[A-Z0-9]{5,10}`, trả `null` nếu không tìm thấy
+  - `processIPN(payload, headers, rawBody)` — full flow:
+    1. Idempotency: kiểm tra `WebhookEvent` theo `transactionCode` — nếu đã xử lý thì return
+    2. Tìm `TingeeConfig` theo `clientId` (status = active)
+    3. Giải mã `secretToken`, verify chữ ký — nếu sai thì lưu event với `matchedPaymentId = null` và return (không log secret)
+    4. Trích `reconcileCode` từ `content` — nếu không tìm thấy thì lưu event unmatched
+    5. Tìm `Payment` theo `reconcileCode` — nếu không thấy thì lưu event unmatched
+    6. So sánh `amount` (làm tròn số nguyên VND): lệch → set `status = mismatch`; khớp → gọi `markPaid`
+    7. Lưu `WebhookEvent` sau cùng để Tingee có thể retry nếu `markPaid` bị lỗi
+    8. Nếu payment đã `paid` (retry sau khi markPaid thành công nhưng saveEvent thất bại): bỏ qua `markPaid`, chỉ lưu event
+
+### Design decisions
+- `verifySignature` nhận 4 params (thêm `incomingSignature`); spec ghi 3 params nhưng cần giá trị để so sánh
+- `timingSafeEqual` dùng để chống timing attack; try-catch bắt buffer length mismatch (trả false)
+- `WebhookEvent` lưu sau `markPaid` (không trước) để Tingee retry có thể re-process nếu Shopify API fail
+- Chỉ log `transactionCode` trong warning, không bao giờ log `secretToken`
+
+### Manual test
+Dùng `curl` để gọi endpoint IPN (Phase 4), hoặc unit test riêng từng hàm:
+
+```
+# Test extractReconcileCode:
+node -e "import('./app/services/ipn.server.js').then(m => { console.log(m.extractReconcileCode('TG7K2P9 chuyen khoan')); console.log(m.extractReconcileCode('no code here')); });" --input-type=module
+# Kỳ vọng: 'TG7K2P9', null
+
+# Test verifySignature (giả lập):
+node -e "
+import('./app/services/ipn.server.js').then(m => {
+  const key = 'my-secret';
+  const ts = '20260613120000000';
+  const body = JSON.stringify({ amount: 1000 });
+  const { createHmac } = await import('crypto');
+  const sig = createHmac('sha512', key).update(ts + ':' + body).digest('hex');
+  console.log('valid:', m.verifySignature(ts, body, key, sig));
+  console.log('invalid:', m.verifySignature(ts, body, key, 'wrong'));
+});
+" --input-type=module
+# Kỳ vọng: true, false
+```
+
+Compile check: `npm run typecheck` → pass.
+
+---
+
+## [1.5.0] 2026-06-13 — Phase 3c: OrderReconcile service
+
+### Added
+- `app/services/order-reconcile.server.ts`:
+  - `markPaid(shopDomain, orderId, amount, accessToken, paymentId, tingeeTransactionCode)`:
+    1. Gọi `POST https://{shopDomain}/admin/api/2024-10/orders/{orderId}/transactions.json` với `{ kind: "capture", status: "success", amount }`
+    2. Nếu Shopify trả lỗi HTTP → throw Error với status code + body
+    3. Cập nhật `payments.status = "paid"`, `payments.paidAt = now()`, `payments.tingeeTransactionCode` trong DB
+
+### Manual test
+Cần token thật để gọi Shopify Admin API. Test sẽ thực hiện trong Phase 7 khi demo end-to-end.
+
+Compile check: `npm run typecheck` → pass.
+
+---
+
+## [1.4.0] 2026-06-13 — Phase 3b: TingeeService
+
+### Added
+- `app/services/tingee.server.ts` — 4 hàm gọi Tingee Open API qua `@tingee/sdk-node`:
+  - `listVirtualAccounts(clientId, secretToken)` → danh sách VA của merchant (gọi `get-va-paging`)
+  - `registerNotify(vaAccountNumber, bankBin, clientId, secretToken)` → đăng ký IPN cho VA (gọi `register-notify` + `confirm-register-notify` tự động)
+  - `generateVietQR(bankBin, accountNumber, amount, content, clientId, secretToken)` → trả `{ qrCode, qrCodeImage }` (gọi `generate-viet-qr`)
+  - `getTransactions(clientId, secretToken, vaAccountNumbers?, startTime?, endTime?)` → danh sách giao dịch (gọi `transaction/get-paging`)
+- Hàm `assertOk<T>()` — throw `Error` có message rõ ràng khi Tingee trả `code != "00"`
+- `makeClient()` — tạo `TingeeClient` per-merchant, đọc `TINGEE_BASE_URL` từ env (override nếu có)
+
+### Manual test
+Chưa thể test trực tiếp với Tingee API — cần `clientId` + `secretToken` thật. Test logic sẽ được thực hiện trong Phase 4 khi nối UI.
+
+Có thể kiểm tra TypeScript compile clean bằng `npm run typecheck`.
+
+---
+
+## [1.3.0] 2026-06-13 — Phase 3a: Encryption helper
+
+### Added
+- `app/utils/crypto.server.ts` — AES-256-GCM encrypt/decrypt:
+  - `encrypt(plaintext, key): string` — mã hóa AES-GCM, nonce 12 byte tự sinh (prepend vào ciphertext), trả base64
+  - `decrypt(ciphertext, key): string` — giải mã, trả plaintext UTF-8
+  - `key` là chuỗi base64 32 bytes (từ `ENCRYPTION_KEY` env); throw `Error` nếu rỗng
+  - Dùng `managedNonce(gcm)` từ `@noble/ciphers` — nonce tự động, không cần quản lý thủ công
+
+### Manual test
+1. Chạy đoạn script nhỏ trong Node để kiểm tra:
+   ```
+   node -e "
+   process.env.ENCRYPTION_KEY = require('child_process').execSync('openssl rand -base64 32').toString().trim();
+   const key = process.env.ENCRYPTION_KEY;
+   const { encrypt, decrypt } = await import('./app/utils/crypto.server.js');
+   const ct = encrypt('hello', key);
+   console.log('ciphertext:', ct);
+   console.log('decrypted:', decrypt(ct, key));
+   " --input-type=module
+   ```
+2. Hoặc: thêm test case trong route loader tạm thời để gọi `encrypt` rồi `decrypt` và xem kết quả.
+3. Kỳ vọng: `decrypted` = `'hello'`; mỗi lần `encrypt` cùng text sẽ ra ciphertext khác nhau (do nonce ngẫu nhiên).
+
+---
+
 ## [1.2.0] 2026-06-13 — Phase 2b: Trang QR thanh toán (UI tĩnh)
 
 ### Added
