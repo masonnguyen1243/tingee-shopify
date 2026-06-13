@@ -1,6 +1,6 @@
 # Implementation Plan — Tingee × Shopify App
 
-> Version: 1.2 | Date: 2026-06-12 | Status: Pre-implementation
+> Version: 1.2 | Date: 2026-06-12 | Status: Phase 1 complete
 
 ---
 
@@ -8,19 +8,19 @@
 
 Goal: App Shopify cài được lên dev store, OAuth chạy, DB có schema, deps sẵn sàng.
 
-- [ ] Chạy `shopify app init` — chọn template **React Router (Node.js)**
-- [ ] Chạy `shopify app dev` — xác nhận OAuth flow, Cloudflare tunnel, và Prisma SQLite tạo được
-- [ ] Khai báo scopes trong `shopify.app.toml`: `write_orders, read_orders`
-- [ ] Đăng ký 4 webhooks trong `shopify.app.toml`: `customers/data_request`, `customers/redact`, `shop/redact`, `app/uninstalled`
-- [ ] Cài dependencies: `@tingee/sdk-node`, `@noble/ciphers` (mã hóa at-rest)
-- [ ] Thêm Prisma schema cho 5 bảng mới (bên cạnh `shopify_sessions` có sẵn):
-  - [ ] `merchants` — `id`, `shopify_shop_domain`, `shopify_access_token`, `created_at`
-  - [ ] `tingee_configs` — `id`, `merchant_id`, `client_id`, `secret_token` (encrypted), `status`, `created_at`
-  - [ ] `tingee_accounts` — `id`, `tingee_config_id`, `va_account_number`, `account_number`, `bank_bin`, `account_name`, `is_default`, `notify_registered`
-  - [ ] `payments` — `id`, `merchant_id`, `shopify_order_id`, `reconcile_code` (unique), `qr_code_image`, `amount`, `status`, `tingee_transaction_code`, `created_at`, `paid_at`
-  - [ ] `webhook_events` — `id`, `tingee_transaction_code`, `raw_headers`, `raw_body`, `matched_payment_id`, `received_at`
-- [ ] Chạy `prisma migrate dev` — xác nhận migration thành công
-- [ ] Thêm `ENCRYPTION_KEY` vào `.env` (key 32 bytes)
+- [x] Chạy `shopify app init` — chọn template **React Router (Node.js)**
+- [x] Chạy `shopify app dev` — xác nhận OAuth flow, Cloudflare tunnel, và Prisma SQLite tạo được
+- [x] Khai báo scopes trong `shopify.app.toml`: `write_orders, read_orders`
+- [x] Đăng ký 4 webhooks trong `shopify.app.toml`: `customers/data_request`, `customers/redact`, `shop/redact`, `app/uninstalled`
+- [x] Cài dependencies: `@tingee/sdk-node`, `@noble/ciphers` (mã hóa at-rest)
+- [x] Thêm Prisma schema cho 5 bảng mới (bên cạnh `shopify_sessions` có sẵn):
+  - [x] `merchants` — `id`, `shopify_shop_domain`, `shopify_access_token`, `created_at`
+  - [x] `tingee_configs` — `id`, `merchant_id`, `client_id`, `secret_token` (encrypted), `status`, `created_at`
+  - [x] `tingee_accounts` — `id`, `tingee_config_id`, `va_account_number`, `account_number`, `bank_bin`, `account_name`, `is_default`, `notify_registered`
+  - [x] `payments` — `id`, `merchant_id`, `shopify_order_id`, `reconcile_code` (unique), `qr_code_image`, `amount`, `status`, `tingee_transaction_code`, `created_at`, `paid_at`
+  - [x] `webhook_events` — `id`, `tingee_transaction_code`, `raw_headers`, `raw_body`, `matched_payment_id`, `received_at`
+- [x] Chạy `prisma migrate dev` — xác nhận migration thành công
+- [x] Thêm `ENCRYPTION_KEY` vào `.env` (key 32 bytes)
 
 ---
 
