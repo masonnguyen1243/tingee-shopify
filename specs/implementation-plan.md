@@ -84,14 +84,14 @@ Goal: Mỗi màn hình dùng dữ liệu thật từ DB và API — xóa hết h
 - [x] `action` bước 2 (lưu): nhận VA đã chọn → gọi `registerNotify` nếu cần → mã hóa `secretToken` → lưu `tingee_configs` + `tingee_accounts`
 
 **Trang QR** (`app/routes/payment.qr.$orderId.tsx`)
-- [ ] `loader`: đọc `shopify_order_id` từ params → kiểm tra đơn trong DB (nếu đã có `payments` thì dùng lại) → gọi `generateVietQR` với `reconcile_code` mới → lưu bản ghi `payments`
-- [ ] Polling endpoint `GET /api/payment-status/$orderId` — trả `{ status }` từ DB
-- [ ] Khi polling nhận `paid` → redirect về `/orders/$orderId/confirmation`
+- [x] `loader`: đọc `shopify_order_id` từ params → kiểm tra đơn trong DB (nếu đã có `payments` thì dùng lại) → gọi `generateVietQR` với `reconcile_code` mới → lưu bản ghi `payments`
+- [x] Polling endpoint `GET /api/payment-status/$orderId` — trả `{ status }` từ DB
+- [x] Khi polling nhận `paid` → redirect về `/orders/$orderId/confirmation`
 
 **IPN endpoint** (`app/routes/webhooks.tingee.ipn.ts`)
-- [ ] Nối với `processIPN` từ Phase 3
-- [ ] Tìm `secretToken` đúng theo `clientId` trong payload → giải mã từ DB trước khi verify
-- [ ] Luôn trả HTTP 200 với `{ "code": "00", "message": "Success" }`
+- [x] Nối với `processIPN` từ Phase 3
+- [x] Tìm `secretToken` đúng theo `clientId` trong payload → giải mã từ DB trước khi verify
+- [x] Luôn trả HTTP 200 với `{ "code": "00", "message": "Success" }`
 
 ---
 

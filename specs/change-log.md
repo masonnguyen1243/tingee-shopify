@@ -27,6 +27,76 @@
 
 ---
 
+## [2.3.0] 2026-06-13 — Phase 4d: IPN endpoint nối với processIPN
+
+### Added
+- `app/routes/webhooks.tingee.ipn.ts` — endpoint `POST /webhooks/tingee/ipn`:
+  - Đọc raw body dưới dạng text trước khi parse JSON (cần thiết để HMAC verify đúng byte-for-byte)
+  - Trích headers: `x-request-timestamp`, `x-signature`, `x-request-id`
+  - Gọi `processIPN(payload, headers, rawBody)` — toàn bộ logic xử lý nằm trong service (Phase 3):
+    - Idempotency check theo `transactionCode`
+    - Tìm `TingeeConfig` theo `clientId` từ payload
+    - Giải mã `secretToken` → verify chữ ký HMAC
+    - Trích `reconcileCode` → match `Payment` → so sánh amount → `markPaid` hoặc `mismatch`
+    - Lưu `WebhookEvent`
+  - **Luôn trả HTTP 200** `{ "code": "00", "message": "Success" }` dù có lỗi hay không — Tingee không retry vô hạn
+
+### Design decisions
+- `rawBody` đọc một lần duy nhất trước `JSON.parse` — nếu đọc sau parse sẽ mất thứ tự key/whitespace, làm sai HMAC
+- `processIPN` đã tự tìm `secretToken` theo `clientId` trong payload và giải mã bên trong — route chỉ cần pass qua
+- `try/catch` bao ngoài `processIPN`: lỗi DB hoặc Shopify API không làm vỡ response, vẫn trả 200
+
+---
+
+## [2.2.0] 2026-06-13 — Phase 4c: Polling trạng thái thanh toán + redirect khi paid
+
+### Added
+- `app/routes/api.payment-status.$orderId.ts` — endpoint `GET /api/payment-status/:orderId?shop=`:
+  - Tìm `Merchant` theo `shop` query param
+  - Tìm `Payment` mới nhất theo `orderId` + `merchantId`
+  - Trả `{ status }` (pending / paid / mismatch / unknown); HTTP 400 nếu thiếu params, 404 nếu không tìm thấy merchant
+
+### Changed
+- `app/routes/payment.qr.$orderId.tsx`:
+  - Loader trả thêm `shop` trong tất cả các nhánh return
+  - Thêm `useEffect` polling: cứ 3 giây fetch `/api/payment-status/${orderId}?shop=...`
+  - Khi nhận `status === "paid"` → dừng polling, `window.location.href = /orders/${orderId}/confirmation`
+  - Polling dừng tự động khi timer hết (expired) hoặc khi component unmount
+
+### Design decisions
+- Poll interval 3 giây: đủ nhanh để customer thấy xác nhận ngay sau khi IPN về, không quá tải server
+- Redirect về `/orders/${orderId}/confirmation` (relative path) — route confirmation sẽ implement ở phase sau nếu cần; hiện tại Shopify Storefront không có route này trong app
+- Polling dừng khi `expired = true` — tránh request vô ích sau khi timer hết 15 phút
+
+---
+
+## [2.1.0] 2026-06-13 — Phase 4b: Trang QR loader — nối DB + Tingee API
+
+### Changed
+- `app/routes/payment.qr.$orderId.tsx` — xóa MOCK_PAYMENT, thay bằng dữ liệu thật:
+
+**Loader:**
+- Đọc `orderId` từ params, `shop` (Shopify domain) từ query string `?shop=`
+- Tìm `Merchant` → `TingeeConfig` active → `TingeeAccount` isDefault
+- **Idempotency:** nếu đã có `Payment` pending cho orderId này → trả lại QR cũ (không tạo mới)
+- Nếu chưa có: gọi Shopify Admin API `GET /admin/api/2024-10/orders/{orderId}.json` để lấy `total_price`
+- Sinh `reconcileCode` unique qua `ensureUnique()`
+- Giải mã `secretToken` → gọi `generateVietQR(bankBin, accountNumber, amount, reconcileCode, ...)`
+- Lưu bản ghi `Payment` vào DB
+- Nếu bất kỳ bước nào thất bại → trả về `{ error: message }`, UI hiển thị màn lỗi thân thiện
+
+**UI:**
+- Thay QR placeholder SVG → `<img src="data:image/png;base64,..." />`
+- Hiển thị bankName, accountNumber, accountName, amount, reconcileCode từ loader data
+- Màn lỗi: heading "Không thể hiển thị QR" + message lỗi
+
+### Design decisions
+- `shop` query param bắt buộc — merchant cấu hình redirect URL dạng `/payment/qr/{orderId}?shop={shop.domain}`
+- Idempotency check theo `status = "pending"` để tránh tạo nhiều QR cho cùng 1 đơn khi customer refresh
+- Countdown timer chỉ bắt đầu khi `payment` hợp lệ (không chạy trên màn lỗi)
+
+---
+
 ## [2.0.0] 2026-06-13 — Phase 4a: Màn cấu hình nối với DB và Tingee API
 
 ### Changed

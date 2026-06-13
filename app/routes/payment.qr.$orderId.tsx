@@ -1,17 +1,137 @@
 import { useState, useEffect, useRef } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
+import prisma from "../db.server";
+import { generateVietQR } from "../services/tingee.server";
+import { decrypt } from "../utils/crypto.server";
+import { ensureUnique } from "../utils/reconcile.server";
+import { getBankShortName } from "@tingee/sdk-node";
 
-export const loader = async ({ params }: LoaderFunctionArgs) => {
-  return { orderId: params.orderId ?? "" };
+type PaymentData = {
+  reconcileCode: string;
+  qrCodeImage: string;
+  amount: number;
+  accountNumber: string;
+  accountName: string;
+  bankName: string;
+  status: string;
 };
 
-const MOCK_PAYMENT = {
-  bankName: "Vietcombank",
-  accountNumber: "1234567890",
-  accountName: "NGUYEN VAN A",
-  amount: 500000,
-  reconcileCode: "TGABC1234",
+export const loader = async ({ params, request }: LoaderFunctionArgs) => {
+  const orderId = params.orderId ?? "";
+  const url = new URL(request.url);
+  const shop = url.searchParams.get("shop") ?? "";
+
+  if (!shop) {
+    return { orderId, shop: "", payment: null as PaymentData | null, error: "Thiếu thông tin cửa hàng" };
+  }
+
+  try {
+    const merchant = await prisma.merchant.findUnique({
+      where: { shopifyShopDomain: shop },
+      include: {
+        tingeeConfigs: {
+          where: { status: "active" },
+          include: {
+            accounts: { where: { isDefault: true }, take: 1 },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
+    });
+
+    if (!merchant || merchant.tingeeConfigs.length === 0) {
+      return { orderId, shop, payment: null as PaymentData | null, error: "Cửa hàng chưa cấu hình Tingee" };
+    }
+
+    const config = merchant.tingeeConfigs[0];
+    const account = config.accounts[0];
+
+    if (!account) {
+      return { orderId, shop, payment: null as PaymentData | null, error: "Cửa hàng chưa có tài khoản VA" };
+    }
+
+    const bankName = getBankShortName(account.bankBin) ?? account.bankBin;
+
+    // Reuse existing pending payment for this order (idempotency on page refresh)
+    const existing = await prisma.payment.findFirst({
+      where: { shopifyOrderId: orderId, merchantId: merchant.id, status: "pending" },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (existing?.qrCodeImage) {
+      return {
+        orderId,
+        shop,
+        error: null,
+        payment: {
+          reconcileCode: existing.reconcileCode,
+          qrCodeImage: existing.qrCodeImage,
+          amount: existing.amount,
+          accountNumber: account.accountNumber,
+          accountName: account.accountName,
+          bankName,
+          status: existing.status,
+        } satisfies PaymentData,
+      };
+    }
+
+    // Fetch order amount from Shopify Admin API
+    const orderRes = await fetch(
+      `https://${shop}/admin/api/2024-10/orders/${orderId}.json`,
+      { headers: { "X-Shopify-Access-Token": merchant.shopifyAccessToken } },
+    );
+
+    if (!orderRes.ok) {
+      return { orderId, shop, payment: null as PaymentData | null, error: "Không tìm thấy đơn hàng" };
+    }
+
+    const { order } = (await orderRes.json()) as { order: { total_price: string } };
+    const amount = parseFloat(order.total_price);
+
+    // Generate unique reconcile code + QR
+    const reconcileCode = await ensureUnique();
+    const encryptionKey = process.env.ENCRYPTION_KEY ?? "";
+    const plainSecret = decrypt(config.secretToken, encryptionKey);
+
+    const { qrCodeImage } = await generateVietQR(
+      account.bankBin,
+      account.accountNumber,
+      amount,
+      reconcileCode,
+      config.clientId,
+      plainSecret,
+    );
+
+    await prisma.payment.create({
+      data: {
+        merchantId: merchant.id,
+        shopifyOrderId: orderId,
+        reconcileCode,
+        qrCodeImage,
+        amount,
+        status: "pending",
+      },
+    });
+
+    return {
+      orderId,
+      shop,
+      error: null,
+      payment: {
+        reconcileCode,
+        qrCodeImage,
+        amount,
+        accountNumber: account.accountNumber,
+        accountName: account.accountName,
+        bankName,
+        status: "pending",
+      } satisfies PaymentData,
+    };
+  } catch (err: any) {
+    return { orderId, shop, payment: null as PaymentData | null, error: err.message as string };
+  }
 };
 
 const COUNTDOWN_SECONDS = 15 * 60;
@@ -26,13 +146,18 @@ function formatVnd(amount: number) {
   return new Intl.NumberFormat("vi-VN").format(amount) + " ₫";
 }
 
+const POLL_INTERVAL_MS = 3000;
+
 export default function PaymentQrPage() {
-  const { orderId } = useLoaderData<typeof loader>();
+  const { orderId, shop, payment, error } = useLoaderData<typeof loader>();
   const [remaining, setRemaining] = useState(COUNTDOWN_SECONDS);
   const [expired, setExpired] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Countdown timer
   useEffect(() => {
+    if (!payment) return;
     intervalRef.current = setInterval(() => {
       setRemaining((prev) => {
         if (prev <= 1) {
@@ -46,7 +171,44 @@ export default function PaymentQrPage() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, []);
+  }, [payment]);
+
+  // Payment status polling
+  useEffect(() => {
+    if (!payment || !shop || expired) return;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(
+          `/api/payment-status/${orderId}?shop=${encodeURIComponent(shop)}`,
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as { status: string };
+        if (data.status === "paid") {
+          if (pollRef.current) clearInterval(pollRef.current);
+          window.location.href = `/orders/${orderId}/confirmation`;
+        }
+      } catch {
+        // network error — keep polling
+      }
+    };
+
+    pollRef.current = setInterval(poll, POLL_INTERVAL_MS);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [payment, shop, orderId, expired]);
+
+  if (error || !payment) {
+    return (
+      <div style={s.page}>
+        <div style={s.card}>
+          <h1 style={s.heading}>Không thể hiển thị QR</h1>
+          <div style={s.expiredBox}>{error ?? "Có lỗi xảy ra. Vui lòng liên hệ shop."}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={s.page}>
@@ -64,32 +226,31 @@ export default function PaymentQrPage() {
           </span>
         </div>
 
-        {/* QR placeholder */}
+        {/* QR image */}
         <div style={s.qrWrap}>
-          <div style={s.qrPlaceholder}>
-            <QrIcon />
-            <span style={s.qrHint}>Ảnh QR sẽ hiển thị ở đây</span>
-          </div>
+          <img
+            src={`data:image/png;base64,${payment.qrCodeImage}`}
+            alt="QR thanh toán"
+            width={200}
+            height={200}
+            style={{ borderRadius: "12px", display: "block" }}
+          />
         </div>
 
         {/* Payment info */}
         <div style={s.infoCard}>
-          <InfoRow label="Ngân hàng" value={MOCK_PAYMENT.bankName} />
-          <InfoRow
-            label="Số tài khoản"
-            value={MOCK_PAYMENT.accountNumber}
-            bold
-          />
-          <InfoRow label="Chủ tài khoản" value={MOCK_PAYMENT.accountName} />
+          <InfoRow label="Ngân hàng" value={payment.bankName} />
+          <InfoRow label="Số tài khoản" value={payment.accountNumber} bold />
+          <InfoRow label="Chủ tài khoản" value={payment.accountName} />
           <InfoRow
             label="Số tiền"
-            value={formatVnd(MOCK_PAYMENT.amount)}
+            value={formatVnd(payment.amount)}
             bold
             valueColor="#dc2626"
           />
           <div style={s.reconcileRow}>
             <span style={s.label}>Nội dung chuyển khoản</span>
-            <span style={s.reconcileCode}>{MOCK_PAYMENT.reconcileCode}</span>
+            <span style={s.reconcileCode}>{payment.reconcileCode}</span>
           </div>
         </div>
 
@@ -164,51 +325,6 @@ function PulsingDot() {
   );
 }
 
-function QrIcon() {
-  return (
-    <svg
-      width="120"
-      height="120"
-      viewBox="0 0 120 120"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ opacity: 0.25 }}
-    >
-      {/* Top-left finder pattern */}
-      <rect x="8" y="8" width="36" height="36" rx="4" fill="#111827" />
-      <rect x="16" y="16" width="20" height="20" rx="2" fill="white" />
-      <rect x="22" y="22" width="8" height="8" rx="1" fill="#111827" />
-      {/* Top-right finder pattern */}
-      <rect x="76" y="8" width="36" height="36" rx="4" fill="#111827" />
-      <rect x="84" y="16" width="20" height="20" rx="2" fill="white" />
-      <rect x="90" y="22" width="8" height="8" rx="1" fill="#111827" />
-      {/* Bottom-left finder pattern */}
-      <rect x="8" y="76" width="36" height="36" rx="4" fill="#111827" />
-      <rect x="16" y="84" width="20" height="20" rx="2" fill="white" />
-      <rect x="22" y="90" width="8" height="8" rx="1" fill="#111827" />
-      {/* Data modules (simplified pattern) */}
-      <rect x="52" y="8" width="8" height="8" fill="#111827" />
-      <rect x="64" y="8" width="8" height="8" fill="#111827" />
-      <rect x="52" y="20" width="8" height="8" fill="#111827" />
-      <rect x="52" y="52" width="8" height="8" fill="#111827" />
-      <rect x="64" y="52" width="8" height="8" fill="#111827" />
-      <rect x="52" y="64" width="8" height="8" fill="#111827" />
-      <rect x="64" y="64" width="8" height="8" fill="#111827" />
-      <rect x="76" y="52" width="8" height="8" fill="#111827" />
-      <rect x="88" y="64" width="8" height="8" fill="#111827" />
-      <rect x="100" y="52" width="8" height="8" fill="#111827" />
-      <rect x="76" y="76" width="8" height="8" fill="#111827" />
-      <rect x="92" y="76" width="8" height="8" fill="#111827" />
-      <rect x="108" y="76" width="8" height="8" fill="#111827" />
-      <rect x="76" y="92" width="8" height="8" fill="#111827" />
-      <rect x="100" y="92" width="8" height="8" fill="#111827" />
-      <rect x="76" y="108" width="8" height="8" fill="#111827" />
-      <rect x="92" y="108" width="8" height="8" fill="#111827" />
-      <rect x="108" y="108" width="8" height="8" fill="#111827" />
-    </svg>
-  );
-}
-
 const s: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
@@ -263,22 +379,6 @@ const s: Record<string, React.CSSProperties> = {
     display: "flex",
     justifyContent: "center",
     marginBottom: "20px",
-  },
-  qrPlaceholder: {
-    width: "200px",
-    height: "200px",
-    border: "2px dashed #d1d5db",
-    borderRadius: "12px",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "8px",
-    backgroundColor: "#f9fafb",
-  },
-  qrHint: {
-    fontSize: "12px",
-    color: "#9ca3af",
   },
   infoCard: {
     border: "1px solid #e5e7eb",
