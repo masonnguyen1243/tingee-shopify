@@ -29,17 +29,17 @@ Goal: App Shopify cài được lên dev store, OAuth chạy, DB có schema, dep
 Goal: Tất cả màn hình render được với dữ liệu tĩnh (hardcoded). Chưa gọi API thật.
 
 **Màn cấu hình tài khoản Tingee** (`app/routes/app.settings.tsx`)
-- [ ] Form 2 trường: `Client ID`, `Secret Token` + nút "Kết nối"
-- [ ] Sau "kết nối" (mock): hiển thị danh sách VA dạng radio list — mỗi item gồm tên ngân hàng, số TK, tên chủ TK, badge trạng thái
-- [ ] Nút "Lưu cấu hình" bên dưới danh sách VA
-- [ ] Thông báo thành công sau khi lưu
+- [x] Form 2 trường: `Client ID`, `Secret Token` + nút "Kết nối"
+- [x] Sau "kết nối" (mock): hiển thị danh sách VA dạng radio list — mỗi item gồm tên ngân hàng, số TK, tên chủ TK, badge trạng thái
+- [x] Nút "Lưu cấu hình" bên dưới danh sách VA
+- [x] Thông báo thành công sau khi lưu
 
 **Trang QR thanh toán** (`app/routes/payment.qr.$orderId.tsx`)
-- [ ] Hiển thị ảnh QR (dùng ảnh placeholder)
-- [ ] Thông tin bên dưới QR: tên ngân hàng, số tài khoản, tên chủ TK, số tiền (hardcoded), mã đối soát (vd `TGABC1234`)
-- [ ] Banner cảnh báo nổi bật: "Không thay đổi nội dung chuyển khoản — một số ứng dụng ngân hàng cho phép sửa, nhưng thay đổi sẽ khiến đơn hàng không được xác nhận tự động"
-- [ ] Đồng hồ đếm ngược 15 phút
-- [ ] Dòng trạng thái "Đang chờ xác nhận thanh toán..."
+- [x] Hiển thị ảnh QR (dùng ảnh placeholder)
+- [x] Thông tin bên dưới QR: tên ngân hàng, số tài khoản, tên chủ TK, số tiền (hardcoded), mã đối soát (vd `TGABC1234`)
+- [x] Banner cảnh báo nổi bật: "Không thay đổi nội dung chuyển khoản — một số ứng dụng ngân hàng cho phép sửa, nhưng thay đổi sẽ khiến đơn hàng không được xác nhận tự động"
+- [x] Đồng hồ đếm ngược 15 phút
+- [x] Dòng trạng thái "Đang chờ xác nhận thanh toán..."
 
 ---
 
