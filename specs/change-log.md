@@ -27,6 +27,23 @@
 
 ---
 
+## [1.0.0] 2026-06-12 — Phase 1: Project setup
+
+### Added
+- Shopify React Router (TypeScript) template scaffolded from `https://github.com/Shopify/shopify-app-template-react-router` branch `main-cli`
+- `shopify.app.toml`: scopes `write_orders,read_orders`; 4 webhook subscriptions (`app/uninstalled`, `customers/data_request`, `customers/redact`, `shop/redact`)
+- Dependencies: `@tingee/sdk-node@0.2.3`, `@noble/ciphers@2.2.0`
+- Prisma schema: 5 new models — `Merchant`, `TingeeConfig`, `TingeeAccount`, `Payment`, `WebhookEvent`
+- Migration `20260612102441_phase1_setup` applied to SQLite dev DB
+- `.env` with generated `ENCRYPTION_KEY` (32-byte base64); `.env.example` for onboarding
+
+### Manual test
+1. `npm install` → succeeds
+2. `npx prisma migrate dev` → shows "Your database is now in sync with your schema"
+3. `shopify app dev` (after filling `SHOPIFY_API_KEY` / `SHOPIFY_API_SECRET` in `.env`) → OAuth flow opens, Cloudflare tunnel starts, app installs on dev store
+
+---
+
 ## [0.1.0] 2026-06-12 — Spec-driven setup
 
 - Khởi tạo tài liệu dự án: README, CLAUDE.md, product-spec, implementation-plan, test-plan

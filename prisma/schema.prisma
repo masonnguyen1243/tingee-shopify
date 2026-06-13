@@ -1,0 +1,91 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model Merchant {
+  id                  String          @id @default(cuid())
+  shopifyShopDomain   String          @unique
+  shopifyAccessToken  String
+  createdAt           DateTime        @default(now())
+  tingeeConfigs       TingeeConfig[]
+  payments            Payment[]
+}
+
+model TingeeConfig {
+  id           String           @id @default(cuid())
+  merchantId   String
+  merchant     Merchant         @relation(fields: [merchantId], references: [id])
+  clientId     String
+  secretToken  String
+  status       String           @default("active")
+  createdAt    DateTime         @default(now())
+  accounts     TingeeAccount[]
+}
+
+model TingeeAccount {
+  id               String       @id @default(cuid())
+  tingeeConfigId   String
+  tingeeConfig     TingeeConfig @relation(fields: [tingeeConfigId], references: [id])
+  vaAccountNumber  String
+  accountNumber    String
+  bankBin          String
+  accountName      String
+  isDefault        Boolean      @default(false)
+  notifyRegistered Boolean      @default(false)
+}
+
+model Payment {
+  id                    String          @id @default(cuid())
+  merchantId            String
+  merchant              Merchant        @relation(fields: [merchantId], references: [id])
+  shopifyOrderId        String
+  reconcileCode         String          @unique
+  qrCodeImage           String?
+  amount                Float
+  status                String          @default("pending")
+  tingeeTransactionCode String?
+  createdAt             DateTime        @default(now())
+  paidAt                DateTime?
+  webhookEvents         WebhookEvent[]
+}
+
+model WebhookEvent {
+  id               String   @id @default(cuid())
+  transactionCode  String   @unique
+  rawHeaders       String
+  rawBody          String
+  matchedPaymentId String?
+  matchedPayment   Payment? @relation(fields: [matchedPaymentId], references: [id])
+  receivedAt       DateTime @default(now())
+}
