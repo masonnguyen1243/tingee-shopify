@@ -36,8 +36,8 @@
     "@tingee/sdk-node": "^0.2.3",
     "isbot": "^5.1.31",
     "prisma": "^6.16.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "react-router": "^7.12.0",
     "vite-tsconfig-paths": "^5.1.4"
   },
